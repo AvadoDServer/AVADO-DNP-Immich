@@ -2,7 +2,7 @@
 user __NGINX_USER__;
 worker_processes 2;
 pid /tmp/avado-nginx/nginx.pid;
-error_log /dev/stderr warn;
+error_log /dev/stderr error;
 
 events {
   worker_connections 1024;
