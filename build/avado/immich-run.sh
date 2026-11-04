@@ -1,0 +1,127 @@
+#!/bin/bash
+# Immich on AVADO: the four parts Immich's own docker-compose.yml runs as
+# separate containers, in this one container (an AVADO package is one
+# container): PostgreSQL with VectorChord, Valkey, machine learning (CPU) and
+# the Immich server. If any part stops, the others are stopped cleanly and
+# the container exits, so Docker starts the whole app again.
+set -u
+
+PGBIN=/usr/lib/postgresql/17/bin
+PGROOT=/var/lib/postgresql
+PGDATA=$PGROOT/data
+PWFILE=$PGROOT/avado-db-password
+log() { echo "[avado] $*"; }
+# Run a program as another user. The long-running parts below call setpriv
+# directly: it leaves no extra parent process (unlike runuser), so a stop
+# signal reaches the program itself.
+as_user() { _u=$1; shift; setpriv --reuid="$_u" --regid="$_u" --init-groups -- "$@"; }
+# Wait up to $1 seconds for the given processes to end.
+wait_gone() {
+  _n=$(( $1 * 5 )); shift
+  while [ "$_n" -gt 0 ]; do
+    _alive=0
+    for _p in "$@"; do kill -0 "$_p" 2>/dev/null && _alive=1; done
+    [ "$_alive" = 0 ] && return 0
+    sleep 0.2; _n=$(( _n - 1 ))
+  done
+  return 1
+}
+
+# ---- database -------------------------------------------------------------
+mkdir -p "$PGDATA" /run/postgresql
+chown postgres:postgres "$PGROOT" "$PGDATA" /run/postgresql
+chmod 700 "$PGDATA"
+if [ ! -s "$PWFILE" ]; then
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$PWFILE"
+  chmod 600 "$PWFILE"
+fi
+DB_PASSWORD=$(cat "$PWFILE")
+
+if [ ! -s "$PGDATA/PG_VERSION" ]; then
+  log "first start: creating the photo database"
+  printf '%s\n' "$DB_PASSWORD" > /run/postgresql/pw
+  chown postgres /run/postgresql/pw
+  as_user postgres "$PGBIN/initdb" -D "$PGDATA" --username=postgres \
+    --pwfile=/run/postgresql/pw --auth-local=peer --auth-host=scram-sha-256 \
+    --encoding=UTF8 --locale=C.UTF-8 --data-checksums || exit 1
+  rm -f /run/postgresql/pw
+  cat >> "$PGDATA/postgresql.conf" <<'CONF'
+
+# AVADO: Immich's database, reachable only inside this container.
+listen_addresses = '127.0.0.1'
+unix_socket_directories = '/run/postgresql'
+shared_preload_libraries = 'vchord'
+shared_buffers = 256MB
+max_wal_size = 1GB
+min_wal_size = 80MB
+wal_compression = on
+# Docker gives a container only 64 MB of shared memory (/dev/shm) and the
+# AVADO package format cannot raise it (Immich's own compose file asks for
+# 128 MB), so PostgreSQL keeps its shared work areas in the data folder.
+dynamic_shared_memory_type = mmap
+CONF
+fi
+
+setpriv --reuid=postgres --regid=postgres --init-groups -- "$PGBIN/postgres" -D "$PGDATA" &
+PG_PID=$!
+for _ in $(seq 1 120); do
+  "$PGBIN/pg_isready" -q -h 127.0.0.1 -U postgres && break
+  kill -0 "$PG_PID" 2>/dev/null || { log "the database did not start"; exit 1; }
+  sleep 1
+done
+export PGPASSWORD=$DB_PASSWORD
+if ! psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='immich'" | grep -q 1; then
+  psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE immich" >/dev/null || exit 1
+fi
+unset PGPASSWORD
+
+# ---- queue (Valkey, nothing written to disk, as in Immich's compose file) --
+setpriv --reuid=valkey --regid=valkey --init-groups -- valkey-server --bind 127.0.0.1 --port 6379 --protected-mode yes \
+  --save "" --appendonly no --dir /tmp --loglevel warning &
+VK_PID=$!
+
+# ---- machine learning (CPU) ----------------------------------------------
+(
+  cd /usr/src || exit 1
+  exec env IMMICH_HOST=127.0.0.1 IMMICH_PORT=3003 PYTHONPATH=/usr/src \
+    PATH=/opt/venv/bin:$PATH VIRTUAL_ENV=/opt/venv \
+    /opt/venv/bin/python -m immich_ml
+) &
+ML_PID=$!
+
+# ---- Immich server ---------------------------------------------------------
+(
+  cd /usr/src/app || exit 1
+  exec env IMMICH_HOST=127.0.0.1 IMMICH_PORT=2283 \
+    DB_HOSTNAME=127.0.0.1 DB_PORT=5432 DB_USERNAME=postgres \
+    DB_PASSWORD="$DB_PASSWORD" DB_DATABASE_NAME=immich \
+    REDIS_HOSTNAME=127.0.0.1 REDIS_PORT=6379 \
+    IMMICH_MACHINE_LEARNING_URL=http://127.0.0.1:3003 \
+    start.sh
+) &
+SV_PID=$!
+
+stopping=0
+# Docker gives an app 10 seconds to stop, so: the server and machine learning
+# get 5 seconds, then the queue, then a "fast" database shutdown, which
+# writes everything to disk.
+stop_all() {
+  [ "$stopping" = 1 ] && return
+  stopping=1
+  log "stopping Immich"
+  kill -TERM "$SV_PID" "$ML_PID" 2>/dev/null
+  wait_gone 5 "$SV_PID" "$ML_PID" || kill -KILL "$SV_PID" "$ML_PID" 2>/dev/null
+  kill -TERM "$VK_PID" 2>/dev/null
+  kill -INT "$PG_PID" 2>/dev/null
+  wait_gone 4 "$VK_PID" "$PG_PID"
+  log "Immich stopped"
+}
+trap 'stop_all; exit 0' TERM INT
+
+wait -n "$PG_PID" "$VK_PID" "$ML_PID" "$SV_PID"
+code=$?
+for p in PG:$PG_PID VK:$VK_PID ML:$ML_PID SV:$SV_PID; do
+  kill -0 "${p#*:}" 2>/dev/null || log "part ${p%%:*} stopped (exit $code); restarting the app"
+done
+stop_all
+exit 1

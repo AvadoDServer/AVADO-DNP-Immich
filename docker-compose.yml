@@ -1,0 +1,16 @@
+version: '3.4'
+services:
+  immich.avado.dnp.dappnode.eth:
+    image: 'immich.avado.dnp.dappnode.eth:0.1.0'
+    build:
+      context: ./build
+    volumes:
+      - 'library:/data'
+      - 'database:/var/lib/postgresql'
+      - 'models:/cache'
+      - '/etc/localtime:/etc/localtime:ro'
+    restart: always
+volumes:
+  library: {}
+  database: {}
+  models: {}
