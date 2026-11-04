@@ -90,15 +90,65 @@ VK_PID=$!
 ML_PID=$!
 
 # ---- Immich server ---------------------------------------------------------
-(
-  cd /usr/src/app || exit 1
-  exec env IMMICH_HOST=127.0.0.1 IMMICH_PORT=2283 \
-    DB_HOSTNAME=127.0.0.1 DB_PORT=5432 DB_USERNAME=postgres \
-    DB_PASSWORD="$DB_PASSWORD" DB_DATABASE_NAME=immich \
-    REDIS_HOSTNAME=127.0.0.1 REDIS_PORT=6379 \
-    IMMICH_MACHINE_LEARNING_URL=http://127.0.0.1:3003 \
-    start.sh
-) &
+# start_server [VAR=value ...]: the Immich server in the background. With
+# AVADO_GROUP=1 it gets its own process group, so it can be stopped together
+# with the worker processes it starts.
+start_server() {
+  (
+    cd /usr/src/app || exit 1
+    _launch=
+    [ "${AVADO_GROUP:-0}" = 1 ] && _launch=setsid
+    exec $_launch env IMMICH_HOST=127.0.0.1 IMMICH_PORT=2283 \
+      DB_HOSTNAME=127.0.0.1 DB_PORT=5432 DB_USERNAME=postgres \
+      DB_PASSWORD="$DB_PASSWORD" DB_DATABASE_NAME=immich \
+      REDIS_HOSTNAME=127.0.0.1 REDIS_PORT=6379 \
+      IMMICH_MACHINE_LEARNING_URL=http://127.0.0.1:3003 \
+      "$@" start.sh
+  ) &
+}
+
+# First start only: switch off Immich's "New update!" notice. Owners get
+# Immich updates with the AVADO package and cannot update Immich themselves,
+# so the notice only confuses (and the check asks GitHub every hour). Immich
+# keeps its settings in tables it makes on its first start, so on that start
+# the server first runs without its background worker (which does the version
+# check), the setting is written, and then Immich starts normally. The owner
+# can turn the check back on in Immich (Administration > Settings > Version
+# check); this is never done again once Immich's tables exist.
+db() { PGPASSWORD=$DB_PASSWORD psql -h 127.0.0.1 -U postgres -d immich -v ON_ERROR_STOP=1 -tAq "$@"; }
+if [ "$(db -c "SELECT to_regclass('public.system_metadata') IS NOT NULL")" != t ]; then
+  log "first start: preparing Immich's settings (about a minute)"
+  AVADO_GROUP=1 start_server IMMICH_WORKERS_INCLUDE=api
+  FIRST_PID=$!
+  trap 'kill -TERM -- -"$FIRST_PID" 2>/dev/null; kill -TERM "$VK_PID" "$ML_PID" 2>/dev/null; wait_gone 5 "$FIRST_PID"; kill -INT "$PG_PID"; wait_gone 4 "$PG_PID"; exit 0' TERM INT
+  for _ in $(seq 1 600); do
+    curl -fs -o /dev/null http://127.0.0.1:2283/api/server/ping && break
+    kill -0 "$FIRST_PID" 2>/dev/null || break
+    sleep 1
+  done
+  if db -c "INSERT INTO system_metadata (key, value) VALUES ('system-config', '{\"newVersionCheck\": {\"enabled\": false}}') ON CONFLICT (key) DO NOTHING"; then
+    log "first start: the update notice is off (AVADO brings Immich updates)"
+  else
+    log "first start: could not switch off the update notice; Immich works anyway"
+  fi
+  # Stop it with its worker processes (the API worker would otherwise keep
+  # the port), then wait until the port is free for the real start.
+  kill -TERM -- -"$FIRST_PID" 2>/dev/null
+  for _ in $(seq 1 50); do
+    pgrep -g "$FIRST_PID" >/dev/null || break
+    sleep 0.2
+  done
+  kill -KILL -- -"$FIRST_PID" 2>/dev/null
+  wait "$FIRST_PID" 2>/dev/null
+  for _ in $(seq 1 30); do
+    curl -s -o /dev/null --max-time 2 http://127.0.0.1:2283/api/server/ping
+    [ $? = 7 ] && break
+    sleep 1
+  done
+  trap - TERM INT
+fi
+
+start_server
 SV_PID=$!
 
 stopping=0

@@ -28,10 +28,29 @@ http {
   ssl_protocols       TLSv1.2 TLSv1.3;
   ssl_session_cache   shared:avado:2m;
 
+  # Photos and passwords only over HTTPS: plain http goes to the https page.
   server {
     listen 80 default_server;
+    location / {
+      return 301 https://$host$request_uri;
+    }
+  }
+
+  server {
     listen 443 ssl default_server;
     client_max_body_size 50000m;
+
+    # Immich needs up to a minute to start (longer after an update, the first
+    # start sets up the database): show a plain "starting" page that reloads
+    # itself instead of "502 Bad Gateway". The phone app retries by itself.
+    error_page 502 = @starting;
+    location @starting {
+      default_type text/html;
+      add_header Cache-Control "no-store" always;
+      add_header Retry-After 10 always;
+      return 503 '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>Immich is starting</title></head><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 16px;text-align:center;color:#4250af"><h1 style="font-size:1.5rem">Immich is starting</h1><p>This takes up to a minute, a little longer after an update. This page opens Immich by itself when it is ready.</p></body></html>';
+    }
+
     location / {
       proxy_pass http://127.0.0.1:2283;
       proxy_http_version 1.1;

@@ -1,16 +1,20 @@
-# Immich v3.3.5 in one container: the official server image (Debian 13) with
+# Immich v3.3.6 in one container: the official server image (Debian 13) with
 # the official machine-learning image's Python runtime copied in, PostgreSQL 17
 # with pgvector and VectorChord 0.4.3 (the version Immich's own compose file
 # uses), Valkey and nginx. Both Immich images are pinned by digest.
-FROM --platform=linux/amd64 ghcr.io/immich-app/immich-machine-learning:v3.3.5@sha256:5b28c9352c8374b8a1ed96fbdd8d6755fea6e43510ec43fdf6538aa02ea40f56 AS ml
+FROM --platform=linux/amd64 ghcr.io/immich-app/immich-machine-learning:v3.3.6@sha256:14367bfb374b8576ddf49abd67c5ca0190a4c7fcf6303cdad65d7f7bf1a50bc2 AS ml
 
-FROM --platform=linux/amd64 ghcr.io/immich-app/immich-server:v3.3.5@sha256:485d546a2e31d6a8b4db8423fcba5c109de8c218d93410af115fd1ccfc4352a6
+FROM --platform=linux/amd64 ghcr.io/immich-app/immich-server:v3.3.6@sha256:e1981983b1c13f6024b57d72e7ecae3342eed1581201ab09fb248932d86c593a
 
 ARG VCHORD_DEB=postgresql-17-vchord_0.4.3-1_amd64.deb
 ARG VCHORD_SHA256=a4776ac7b1def6d4f02370227a214be50ec36c84d0af3469070120667215f4ae
+# pgvector pinned: VectorChord 0.4.3 works with pgvector >=0.7, <0.9, so a
+# newer pgvector must not slip into a rebuild unnoticed.
+ARG PGVECTOR_VERSION=0.8.7-1.pgdg13+1
 
 # PostgreSQL 17 + pgvector from the PostgreSQL project's Debian repository,
-# which the image already uses for its PostgreSQL client tools. The image
+# which the image already uses for its PostgreSQL client tools (pgvector at
+# a fixed version, see above). The image
 # ships without the CA list apt needs for that https repository, so that is
 # installed first from Debian.
 RUN mv /etc/apt/sources.list.d/pgdg.list /tmp/pgdg.list \
@@ -19,7 +23,7 @@ RUN mv /etc/apt/sources.list.d/pgdg.list /tmp/pgdg.list \
  && mv /tmp/pgdg.list /etc/apt/sources.list.d/pgdg.list \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      postgresql-17 postgresql-17-pgvector valkey-server nginx-light openssl libgomp1 \
+      postgresql-17 "postgresql-17-pgvector=${PGVECTOR_VERSION}" valkey-server nginx-light openssl libgomp1 \
  && curl -fsSL -o /tmp/vchord.deb "https://github.com/tensorchord/VectorChord/releases/download/0.4.3/${VCHORD_DEB}" \
  && echo "${VCHORD_SHA256}  /tmp/vchord.deb" | sha256sum -c - \
  && apt-get install -y --no-install-recommends /tmp/vchord.deb \
@@ -48,7 +52,9 @@ RUN chmod +x /etc/avado/*.sh
 
 # Machine learning on the CPU, gentle on the box: one worker, two threads per
 # model; models are downloaded on first use into the ml-cache volume and
-# unloaded after 5 minutes without work.
+# unloaded after 5 minutes without work. ORT_DISABLE_TELEMETRY: onnxruntime
+# sends usage data to Microsoft unless this is set (Immich sets it itself
+# since v3.3.6; set here as well so it can never be on).
 ENV MACHINE_LEARNING_CACHE_FOLDER=/cache \
     TRANSFORMERS_CACHE=/cache \
     HF_HOME=/cache/hf-cache \
@@ -59,6 +65,7 @@ ENV MACHINE_LEARNING_CACHE_FOLDER=/cache \
     MACHINE_LEARNING_MODEL_INTRA_OP_THREADS=2 \
     MACHINE_LEARNING_MODEL_INTER_OP_THREADS=1 \
     MACHINE_LEARNING_MODEL_TTL=300 \
+    ORT_DISABLE_TELEMETRY=1 \
     IMMICH_TRUSTED_PROXIES=127.0.0.1
 
 ENTRYPOINT ["tini", "--", "/etc/avado/avado-start.sh"]
