@@ -1,0 +1,34 @@
+{
+  "name": "immich.avado.dnp.dappnode.eth",
+  "version": "0.1.0",
+  "upstream": "v3.3.6",
+  "title": "Immich (photos)",
+  "shortDescription": "Back up the photos and videos from your phones to your AVADO",
+  "description": "Your own photo cloud: Immich backs up the photos and videos from your family's phones to your AVADO and shows them in a timeline, in albums and on a map. You can search for things in your photos (\"beach\", \"dog\", \"birthday cake\") and find the people in them. All of this runs on your AVADO itself; no photo leaves your home. Getting started: open Immich and create the first account (it becomes the administrator), then install the free Immich app on your phone, enter https://immich.my.ava.do as the server address, log in and turn on backup. The first time photos are analysed, Immich downloads its search and face models (about 1 GB); after that it works without the internet. Analysing a large photo collection takes hours to days; it runs at a lower priority than the Ethereum node, so your node always comes first. Immich uses about 2 GB of memory, and more while it analyses photos. Any phone or computer that can open my.ava.do (at home on the AVADO network, or away through Remote Access) can use it.",
+  "type": "service",
+  "autoupdate": true,
+  "image": {
+    "volumes": [
+      "library:/data",
+      "database:/var/lib/postgresql",
+      "models:/cache",
+      "/etc/localtime:/etc/localtime:ro"
+    ],
+    "ports": [],
+    "restart": "always"
+  },
+  "author": "AVADO",
+  "license": "GPL-3.0",
+  "dependencies": {},
+  "links": {
+    "Open Immich": "https://immich.my.ava.do",
+    "Immich apps": "https://immich.app/download",
+    "Immich project": "https://immich.app"
+  },
+  "ui": {
+    "OnboardingWizard": {
+      "url": "https://immich.my.ava.do",
+      "external": true
+    }
+  }
+}
