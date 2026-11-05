@@ -1,0 +1,49 @@
+{
+  "title": "Immich",
+  "components": [
+    {
+      "name": "Immich",
+      "github": "immich-app/immich",
+      "images": [
+        {
+          "var": "ml",
+          "ref": "ghcr.io/immich-app/immich-machine-learning:v{version}"
+        },
+        {
+          "var": "server",
+          "ref": "ghcr.io/immich-app/immich-server:v{version}"
+        }
+      ],
+      "caution": "Immich also names the VectorChord and pgvector versions it needs (in its docker-compose.yml). This check does not change those; compare them with build/Dockerfile.",
+      "pins": [
+        {
+          "file": "build/Dockerfile",
+          "text": "immich-machine-learning:v{version}@sha256:{ml}"
+        },
+        {
+          "file": "build/Dockerfile",
+          "text": "immich-server:v{version}@sha256:{server}"
+        },
+        {
+          "file": "build/Dockerfile",
+          "text": "# Immich v{version} in one",
+          "optional": true
+        },
+        {
+          "file": "dappnode_package.json",
+          "text": "\"upstream\": \"v{version}\""
+        },
+        {
+          "file": "README.md",
+          "text": "(https://immich.app) v{version}, photo",
+          "optional": true
+        },
+        {
+          "file": "README.md",
+          "text": "`immich-machine-learning` v{version} images",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}
