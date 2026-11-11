@@ -1,13 +1,13 @@
 # AVADO Immich
 
-`immich.avado.dnp.dappnode.eth`: [Immich](https://immich.app) v3.3.6, photo and video backup for
+`immich.avado.dnp.dappnode.eth`: [Immich](https://immich.app) v3.4.0, photo and video backup for
 the family's phones with search and face recognition, packaged for AVADO. Machine learning runs on
 the processor (no graphics card needed).
 
 - Page: **https://immich.my.ava.do** (http redirects to https: photos and passwords only go over
   https). While Immich starts, the page says "Immich is starting" and reloads itself.
 - Data: three volumes, see below.
-- Images: the official `immich-server` and `immich-machine-learning` v3.3.6 images, both pinned
+- Images: the official `immich-server` and `immich-machine-learning` v3.4.0 images, both pinned
   by digest.
 
 ## How it is put together
