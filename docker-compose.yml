@@ -1,7 +1,7 @@
 version: '3.4'
 services:
   immich.avado.dnp.dappnode.eth:
-    image: 'immich.avado.dnp.dappnode.eth:0.1.0'
+    image: 'immich.avado.dnp.dappnode.eth:0.1.1'
     build:
       context: ./build
     volumes:

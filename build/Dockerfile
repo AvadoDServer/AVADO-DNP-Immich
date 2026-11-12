@@ -1,10 +1,10 @@
-# Immich v3.3.6 in one container: the official server image (Debian 13) with
+# Immich v3.4.0 in one container: the official server image (Debian 13) with
 # the official machine-learning image's Python runtime copied in, PostgreSQL 17
 # with pgvector and VectorChord 0.4.3 (the version Immich's own compose file
 # uses), Valkey and nginx. Both Immich images are pinned by digest.
-FROM --platform=linux/amd64 ghcr.io/immich-app/immich-machine-learning:v3.3.6@sha256:14367bfb374b8576ddf49abd67c5ca0190a4c7fcf6303cdad65d7f7bf1a50bc2 AS ml
+FROM --platform=linux/amd64 ghcr.io/immich-app/immich-machine-learning:v3.4.0@sha256:f4e7275c9fbd956ed7bccc738ac57890bcbd9f9c17844d2ea0b137e38a083454 AS ml
 
-FROM --platform=linux/amd64 ghcr.io/immich-app/immich-server:v3.3.6@sha256:e1981983b1c13f6024b57d72e7ecae3342eed1581201ab09fb248932d86c593a
+FROM --platform=linux/amd64 ghcr.io/immich-app/immich-server:v3.4.0@sha256:7b7b575029168bfb9eb901d868ce7dbfda0d7818e78aaace29b7b8a08cd4e7d5
 
 ARG VCHORD_DEB=postgresql-17-vchord_0.4.3-1_amd64.deb
 ARG VCHORD_SHA256=a4776ac7b1def6d4f02370227a214be50ec36c84d0af3469070120667215f4ae
